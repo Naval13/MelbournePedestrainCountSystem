@@ -1,0 +1,323 @@
+<html>
+    <head>
+        <title>LineCharts - D3</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js">
+        </script>
+        
+        <style>
+        
+    :root {
+      --line-chart-color: #607D8B;
+      --annotation-context-color: #00796B;
+      --annotation-above-color: #00BFA5;
+      --annotation-anomaly-color: #E8336D;
+    }
+        
+    .annotation path {
+      stroke: var(--annotation-context-color);
+    }
+
+    .annotation:not(.above):not(.anomaly) path {
+      stroke-dasharray: 1,3;
+    }
+
+    .annotation text {
+      fill: var(--annotation-context-color);
+    }
+
+    .annotation.above path {
+      stroke: var(--annotation-above-color);
+    }
+
+    .annotation.above text {
+      fill: var(--annotation-above-color);
+    }
+
+    .annotation.anomaly path {
+      stroke: var(--annotation-anomaly-color);
+      stroke-width: 2px;
+    }
+
+    .annotation.anomaly text {
+      fill: var(--annotation-anomaly-color);
+    }
+
+    .annotation-note-bg {
+      fill: rgba(0, 0, 0, 0);
+    }
+
+    .annotation-note-title {
+      font-weight: bold;
+    }
+
+    div.tooltip {    
+            width: 200px;					
+            height: 80px;
+			padding: 4px;
+			background: white;	
+            position: absolute;
+            text-align: left;
+            }
+
+
+    </style>
+    </head>
+    
+    <body>
+        
+        <script src="https://d3js.org/d3.v4.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-annotation/1.12.1/d3-annotation.min.js"></script>
+		<h2>
+			Plotting line charts between TimeOfDay and HourlyAverage
+		</h2>
+		<br/>
+        
+        <p>The line chart shows the aggregated hourly pedestrian counts of all sensors in Melbourne between weekdays (Monday to Friday) and weekends (Saturday and Sunday), and this data is retrieved from https://data.melbourne.vic.gov.au/Transport/Pedestrian-Counting-System-2009-to-Present-counts-/b2ak-trbp
+        </p>
+        
+        <p>
+            Different annotations in the graph is used to show that “Pedestrian counts during weekdays fluctuate at peak hours, whereas counts during weekends grow and shrink steadily throughout the day."
+        </p>
+        
+        <p>
+        Here the red line shows Weekday and blue colured as Weekend</p>
+	   <!-- Create a div where the graph will take place -->
+        <div id="line_chart_visualisation"></div>
+        
+        <script>
+            
+            // set the dimensions and margins of the graph
+            var margin = {top: 10, right: 30, bottom: 30, left: 60},
+            width = 920 - margin.left - margin.right,
+            height = 600 - margin.top - margin.bottom;
+        
+
+            // adding the svg object to the body of the page
+            var svg = d3.select("#line_chart_visualisation")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform","translate(" + margin.left + "," + margin.top + ")");
+
+
+
+//		    Reading the data file
+            d3.csv("PedestrianCountingSystemWeekdaysAndWeekends.csv", function(d) {
+                // Checking whether the data has been read successfully
+//                console.log(d);
+                
+                
+                // group the data: I want to draw one line per group
+                var sumstat = d3.nest() // nest function allows to group the calculation per level of a factor
+                    .key(function(d) { return d.Day;})
+                    .entries(d);
+                
+                console.log(sumstat)
+
+                // Creating X axis 
+                var x = d3.scaleLinear()
+                    .domain(d3.extent(d, function(d) { return +d.TimeOfDay; }))
+                    .range([ 0, width ]);
+                svg.append("g")
+                    .attr("transform", "translate(0," + height + ")")
+                    .call(d3.axisBottom(x).ticks(24));
+
+                
+                // Creating Y axis
+                var y = d3.scaleLinear()
+                    .domain([0, d3.max(d, function(d) { return +d.HourlyAverage; })])
+                    .range([ height, 0 ]);
+                svg.append("g")
+                    .call(d3.axisLeft(y).ticks(15));
+  
+
+                // color schemes
+                var res = sumstat.map(function(d){ return d.key }) // list of group names
+                var color = d3.scaleOrdinal()
+                    .domain(res)
+                    .range(['#e41a1c','#377eb8'])
+
+                // Drawing multiple line on the basis of grouping data
+                svg.selectAll(".line")
+                    .data(sumstat)
+                    .enter()
+                    .append("path")
+                    .attr("fill", "none")
+                    .attr("stroke", function(d){ return color(d.key) })
+                    .attr("stroke-width", 2)
+                    .attr("d", function(d){
+                    return d3.line()
+                        .x(function(d) { return x(d.TimeOfDay); })
+                        .y(function(d) { return y(+d.HourlyAverage); })
+                        (d.values)
+                })
+                
+                // creating circular dots
+                svg.selectAll("dot")
+                    .data(d)
+                    .enter()
+                    .append("circle")
+                    .attr("cx", function(d) { return x(d.TimeOfDay) } )
+                    .attr("cy", function(d) { return y(+d.HourlyAverage) } )
+                    .attr("r", 3)
+                    .style("fill", function() {
+                            return d.color = color(d.key); })
+                    .style("stroke", function() {
+                            return d.color = color(d.key); })
+                    .on("mouseover", mouse_over) // adding mouse over functionality
+                    .on("mouseout", mouse_out);// adding mouse out functionality
+                
+
+                // Creating labels for  X axis:
+                svg.append("text")
+                    .attr("text-anchor", "end")
+                    .attr("x", width / 2)
+                    .attr("y", height + margin.top + 20)
+                    .text("Time Of Day (hr)");
+
+                // Creating labels for  Y axis:
+                svg.append("text")
+                    .attr("text-anchor", "end")
+                    .attr("transform", "rotate(-90)") // for vertical text
+                    .attr("x", 50 - height/ 2)
+                    .attr("y", -margin.left + 20)
+                    .text("Hourly Average")
+                
+                
+                
+            const type = d3.annotationCustomType(
+            d3.annotationXYThreshold, 
+                // theses note values can be updated for a particular annotation mark in the annotation array
+                // by default these values are used
+                {"note":{
+                    "lineType":"none",
+                    "orientation": "top",
+                    "align":"middle"}
+            }
+          )
+                
+                //Creating a list of annotations used in the line chart
+        const annotations = [{
+            note: { label: "Decline after 8 am" },
+            subject: {
+              y1: margin.top + 50,
+              y2: height 
+            },
+            
+            y: margin.top + 50,
+            dy: 20, 
+            data: { x: "9.7"} 
+          },
+        {
+            note: { label: "Increases after 10 am" },
+            subject: {
+              y1: margin.top + 50,
+              y2: height 
+            },
+            
+            y: margin.top + 50,
+            dy: 20, 
+            data: { x: "11.7"}
+          },
+        {
+            note: { label: "Decline after 1 pm" },
+            subject: {
+              y1: margin.top + 50,
+              y2: height 
+            },
+            
+            y: margin.top + 50,
+            dy: 20, 
+            data: { x: "14.7"} 
+          },
+                             {
+            note: { label: "Increases after 3 pm" },
+            subject: {
+              y1: margin.top + 50,
+              y2: height 
+            },
+            
+            y: margin.top + 50,
+            dy: 20, 
+            data: { x: "16.7"} 
+          },
+          {
+            note: { label: "Decline after 5 pm" ,
+                  align: "left"},
+            subject: {
+              y1: margin.top + 50,
+              y2: height 
+            },
+            
+            y: margin.top + 50,
+            dy: 20, 
+            data: { x: "18.7"} 
+          }
+          ]
+        
+        const createAnnotations = d3.annotation()
+            .type(type)
+            .accessors({ 
+              x: function(d){ return x(d.x)},
+              y: function(d){ return y(d.y) }
+            })
+            .annotations(annotations)
+            .textWrap(15)
+        
+        // creating annotations
+        d3.select("svg")
+            .append("g")
+            .attr("class", "annotation-group")
+            .call(createAnnotations)
+
+    });
+            
+         // create div for tooltip
+        var div = d3.select("body").append("div")	
+        .attr("class", "tooltip")				
+        .style("opacity", 0);
+            
+            
+            //Mouse mouse_over
+        function mouse_over(d, i) { 
+			div.transition()
+                .style("opacity", 1);
+            
+            // Checking log to know which day to sho
+            console.log(d)
+            
+//			tooltip text
+			div.html(("Day - " + d.Day) + "<br/>" + ("TimeOfDay - " + d.TimeOfDay + ":00") + "<br/>" + ("HourlyAverage - " + d.HourlyAverage))	
+                .style("top", (d3.event.y - 15) + "px")
+                .style("left", (d3.event.x + 15) + "px");	
+            
+
+//      	Changing opacity of charts on hover			
+			svg.selectAll("circle")
+                .attr("opacity", 0.2); // circle opacity is updated
+			svg.selectAll("line")
+                .attr("opacity", 0.2);// multiple line charts opacity is updated
+            d3.select(this) 
+                .attr("opacity", 1);
+			
+        };
+		
+// readjusting the opacity
+        function mouse_out(d) {
+            svg.selectAll("circle") // readjusting the opacity of circle
+                .attr("opacity", 1);
+            svg.selectAll("line")   // readjusting the opacity of line
+                .attr("opacity", 1);
+            div.transition()		 // time in which it re adjusts
+                .duration(200)		
+                .style("opacity", 0);	    
+        };
+
+            
+            
+    
+	
+	    </script>
+    </body>
+</html>
